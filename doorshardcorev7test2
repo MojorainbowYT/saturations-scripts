@@ -1,0 +1,2408 @@
+--//==================================================--
+--// BAN LOG
+--//==================================================--
+
+local Players = game:GetService("Players")
+
+local BANNED_PLAYERS = {
+	[24941] = "kid... wtf are you doing here, get out 🫩🥀",
+	[1234567890] = "you might be the most fucking lucky person alive if you are getting this message."
+}
+
+local function checkBan(player)
+	if not player or player ~= Players.LocalPlayer then
+		return
+	end
+
+	local message = BANNED_PLAYERS[player.UserId]
+
+	if message then
+		player:Kick(message)
+	end
+end
+
+Players.PlayerAdded:Connect(checkBan)
+
+local localPlayer = Players.LocalPlayer
+
+if localPlayer then
+	task.spawn(checkBan, localPlayer)
+end
+
+--//==================================================--
+--// SERVICES
+--//==================================================--
+
+local TextChatService = game:GetService("TextChatService")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--//==================================================--
+--// PLAYER
+--//==================================================--
+
+local Plr = Players.LocalPlayer
+local PlayerGui = Plr:WaitForChild("PlayerGui")
+
+local Char
+local Hum
+
+--//==================================================--
+--// SETTINGS
+--//==================================================--
+
+local STAMINA_MAX = 100
+local stamina = STAMINA_MAX
+local SPRINT_TIME = 7
+local NORMAL_SPEED = 12
+local SPRINT_SPEED = 20
+
+--//==================================================--
+--// STATE
+--//==================================================--
+
+local isSprinting = false
+local cooldown = false
+local mobileSprintHeld = false
+local currentBarTween = nil
+local currentColorTween = nil
+local refillRunning = false
+
+--//==================================================--
+--// MAIN GAME MODULE & SOUND HELPER
+--//==================================================--
+
+local ModuleScripts = {}
+
+pcall(function()
+	ModuleScripts.MainGame = require(
+		PlayerGui
+			:WaitForChild("MainUI")
+			:WaitForChild("Initiator")
+			:WaitForChild("Main_Game")
+	)
+end)
+
+local MainStuff = {
+	Sounds = {},
+	Models = {
+		LightReplaceModel = {}
+	}
+}
+
+pcall(function()
+	MainStuff.Models.LightReplaceModel =
+		game:GetObjects("rbxassetid://124236591061188")
+end)
+
+local function LoadExternalSound(url, name)
+	if getcustomasset and writefile then
+		local fileName = name .. ".mp3"
+
+		if not isfile(fileName) then
+			writefile(fileName, game:HttpGet(url))
+		end
+
+		return getcustomasset(fileName)
+	end
+
+	return ""
+end
+
+MainStuff.Sounds.GuidingLightEnd = LoadExternalSound(
+	"https://github.com/thelostw3r/ScriptsForMyModes/blob/main/GuidingEnd.mp3?raw=true",
+	"GuidingEnd"
+)
+
+--//==================================================--
+--// FUNCTIONS TABLE
+--//==================================================--
+
+local Functions = {}
+
+function Functions.ChangeLightStyle(Light)
+	if not MainStuff.Models.LightReplaceModel
+		or #MainStuff.Models.LightReplaceModel == 0 then
+		return
+	end
+
+	--//==================================================--
+	--// LIGHT STAND / LIGHT FIXTURE
+	--//==================================================--
+
+	if Light.Name == "LightStand"
+		or Light.Name == "Light_Fixture" then
+
+		local LightModelNew =
+			MainStuff.Models.LightReplaceModel[1]:Clone()
+
+		local LightModelFixture =
+			LightModelNew:FindFirstChild("LightFixture")
+
+		if not LightModelFixture then
+			LightModelNew:Destroy()
+			return
+		end
+
+		local LightModelNeon =
+			LightModelFixture:FindFirstChild("Neon")
+
+		local Dust =
+			LightModelFixture:FindFirstChild("Dust")
+
+		local Pivot =
+			LightModelNew:FindFirstChild("Pivot")
+
+		local LightFixture =
+			Light:FindFirstChild("LightFixture")
+
+		if not LightFixture then
+			LightModelNew:Destroy()
+			return
+		end
+
+		local Neon =
+			LightFixture:FindFirstChild("Neon")
+
+		local CenterAttach =
+			LightModelFixture:FindFirstChild("CenterAttach")
+
+		local SpotLight =
+			CenterAttach
+			and CenterAttach:FindFirstChild("SpotLight")
+
+		LightModelNew:PivotTo(Light:GetPivot())
+
+		if Pivot then
+			Pivot.Parent = Light
+		end
+
+		if Dust and LightFixture then
+			Dust.Parent = LightFixture
+			Dust.CanCollide = false
+
+			local dustNeon =
+				Dust:FindFirstChild("Neon")
+
+			if dustNeon then
+				dustNeon.Part1 = Neon
+			end
+		end
+
+		if LightModelNeon and Neon then
+			for _, Thing in pairs(
+				LightModelNeon:GetChildren()
+			) do
+				Thing.Parent = Neon
+			end
+		end
+
+		if SpotLight then
+			for _, Particle in pairs(
+				LightFixture:GetDescendants()
+			) do
+				if Particle:IsA("ParticleEmitter")
+					or Particle:IsA("Beam") then
+					Particle.Enabled =
+						SpotLight.Enabled
+				end
+			end
+
+			local SpotLightConnection
+
+			SpotLightConnection =
+				SpotLight.Changed:Connect(function()
+					local Brightness =
+						SpotLight.Brightness > 0
+
+					for _, Object in pairs(
+						LightFixture:GetDescendants()
+					) do
+						if Object:IsA("ParticleEmitter")
+							or Object:IsA("Beam") then
+
+							if SpotLight.Enabled then
+								Object.Enabled = Brightness
+							else
+								Object.Enabled = false
+							end
+						end
+					end
+				end)
+
+			Light.Destroying:Once(function()
+				if SpotLightConnection then
+					SpotLightConnection:Disconnect()
+				end
+			end)
+		end
+
+		LightModelNew:Destroy()
+
+	--//==================================================--
+	--// CHANDELIER
+	--//==================================================--
+
+	elseif Light.Name == "Chandelier" then
+
+		local LightModelNew =
+			MainStuff.Models.LightReplaceModel[1]:Clone()
+
+		local LightModelFixture =
+			LightModelNew:FindFirstChild("LightFixture")
+
+		if not LightModelFixture then
+			LightModelNew:Destroy()
+			return
+		end
+
+		local LightModelNeon =
+			LightModelFixture:FindFirstChild("Neon")
+
+		local Dust =
+			LightModelFixture:FindFirstChild("Dust")
+
+		local Bright =
+			LightModelNeon
+			and LightModelNeon:FindFirstChild("Bright sh idfk")
+
+		local LightModelGlow =
+			LightModelNeon
+			and LightModelNeon:FindFirstChild("Glow")
+
+		local LightModelAttachment =
+			LightModelNeon
+			and LightModelNeon:FindFirstChild("atachm")
+
+		local LightFixture =
+			Light:FindFirstChild("LightFixture")
+
+		if not LightFixture then
+			LightModelNew:Destroy()
+			return
+		end
+
+		local Neon =
+			LightFixture:FindFirstChild("Neon")
+
+		local Stand =
+			Light:FindFirstChild("Stand")
+
+		local SpotLight =
+			LightFixture:FindFirstChild("SpotLight")
+
+		LightModelNew:PivotTo(Light:GetPivot())
+
+		if Bright
+			and LightModelGlow
+			and LightModelAttachment then
+
+			local LightCFrame =
+				CFrame.new(
+					-0.062,
+					1.065,
+					0.092,
+					1, 0, 0,
+					0, 1, 0,
+					0, 0, 1
+				)
+
+			Bright.CFrame = LightCFrame
+			LightModelGlow.CFrame = LightCFrame
+			LightModelAttachment.CFrame = LightCFrame
+
+			Bright.Parent = Neon
+
+			local kingAttach =
+				LightModelNeon:FindFirstChild(
+					"King attachment the second"
+				)
+
+			if kingAttach then
+				kingAttach.Parent = Neon
+			end
+
+			LightModelGlow.Parent = Neon
+			LightModelAttachment.Parent = Neon
+		end
+
+		if Dust and LightFixture then
+			local dustNeon =
+				Dust:FindFirstChild("Neon")
+
+			if dustNeon then
+				dustNeon.Part1 = Neon
+			end
+
+			Dust.CanCollide = false
+			Dust.Parent = LightFixture
+		end
+
+		if SpotLight then
+			for _, Particle in pairs(
+				LightFixture:GetDescendants()
+			) do
+				if Particle:IsA("ParticleEmitter")
+					or Particle:IsA("Beam") then
+					Particle.Enabled =
+						SpotLight.Enabled
+				end
+			end
+
+			local SpotLightConnection
+
+			SpotLightConnection =
+				SpotLight.Changed:Connect(function()
+					local Brightness =
+						SpotLight.Brightness > 0
+
+					for _, Object in pairs(
+						LightFixture:GetDescendants()
+					) do
+						if Object:IsA("ParticleEmitter")
+							or Object:IsA("Beam") then
+
+							if SpotLight.Enabled then
+								Object.Enabled = Brightness
+							else
+								Object.Enabled = false
+							end
+						end
+					end
+				end)
+
+			Light.Destroying:Once(function()
+				if SpotLightConnection then
+					SpotLightConnection:Disconnect()
+				end
+			end)
+		end
+
+		LightModelNew:Destroy()
+	end
+end
+
+--//==================================================--
+--// GUIDING LIGHT SOUNDS
+--//==================================================--
+
+local function ChangeGuidingLightSounds()
+	local mainUI =
+		PlayerGui:FindFirstChild("MainUI")
+
+	local initiator =
+		mainUI
+		and mainUI:FindFirstChild("Initiator")
+
+	local mainGameFrame =
+		initiator
+		and initiator:FindFirstChild("Main_Game")
+
+	local health =
+		mainGameFrame
+		and mainGameFrame:FindFirstChild("Health")
+
+	local music =
+		health
+		and health:FindFirstChild("Music")
+
+	local Blue =
+		music
+		and music:FindFirstChild("Blue")
+
+	if not Blue then
+		return
+	end
+
+	local End =
+		Blue:FindFirstChild("End")
+
+	Blue.SoundId = "rbxassetid://10472612727"
+	Blue.Pitch = 0.55
+
+	if End then
+		End.Volume = 3
+
+		if MainStuff.Sounds.GuidingLightEnd ~= "" then
+			End.SoundId =
+				MainStuff.Sounds.GuidingLightEnd
+		end
+	end
+end
+
+--//==================================================--
+--// CHARACTER SETUP
+--//==================================================--
+
+local function setupCharacter(character)
+	Char = character
+	Hum = character:WaitForChild("Humanoid")
+
+	isSprinting = false
+	mobileSprintHeld = false
+	cooldown = false
+	stamina = STAMINA_MAX
+
+	Hum:SetAttribute("SpeedBoost", 0)
+	Hum.WalkSpeed = NORMAL_SPEED
+
+	task.spawn(ChangeGuidingLightSounds)
+end
+
+setupCharacter(
+	Plr.Character
+		or Plr.CharacterAdded:Wait()
+)
+
+--//==================================================--
+--// STAMINA GUI
+--//==================================================--
+
+local StaminaGui =
+	Instance.new("ScreenGui")
+
+StaminaGui.Name = "StaminaGui"
+StaminaGui.Parent = PlayerGui
+StaminaGui.Enabled = true
+StaminaGui.ResetOnSpawn = false
+StaminaGui.ZIndexBehavior =
+	Enum.ZIndexBehavior.Sibling
+
+--//==================================================--
+--// CONTAINER
+--//==================================================--
+
+local Sprint =
+	Instance.new("Frame")
+
+Sprint.Name = "Sprint"
+Sprint.Parent = StaminaGui
+Sprint.AnchorPoint =
+	Vector2.new(0, 1)
+
+Sprint.BackgroundTransparency = 1
+
+Sprint.Position =
+	UDim2.new(
+		0.931555569,
+		0,
+		0.987179458,
+		0
+	)
+
+Sprint.Size =
+	UDim2.new(
+		0.0556001104,
+		0,
+		0.0756410286,
+		0
+	)
+
+Sprint.ZIndex = 1005
+
+--//==================================================--
+--// STAMINA BAR
+--//==================================================--
+
+local Bar =
+	Instance.new("Frame")
+
+Bar.Name = "Bar"
+Bar.Parent = Sprint
+Bar.AnchorPoint =
+	Vector2.new(1, 0.5)
+
+Bar.Position =
+	UDim2.new(0, 53, 0.5, 0)
+
+Bar.Size =
+	UDim2.new(0, 360, 0, 32)
+
+Bar.BackgroundColor3 =
+	Color3.fromRGB(30, 30, 38)
+
+Bar.BackgroundTransparency = 0.1
+Bar.BorderSizePixel = 0
+Bar.ZIndex = 1005
+
+local BarCorner =
+	Instance.new("UICorner")
+
+BarCorner.CornerRadius =
+	UDim.new(0, 9)
+
+BarCorner.Parent = Bar
+
+--//==================================================--
+--// BAR PADDING
+--//==================================================--
+
+local BarPadding =
+	Instance.new("UIPadding")
+
+BarPadding.Parent = Bar
+
+BarPadding.PaddingTop =
+	UDim.new(0, 4)
+
+BarPadding.PaddingBottom =
+	UDim.new(0, 4)
+
+BarPadding.PaddingLeft =
+	UDim.new(0, 4)
+
+BarPadding.PaddingRight =
+	UDim.new(0, 4)
+
+--//==================================================--
+--// STAMINA FILL
+--//==================================================--
+
+local Fill =
+	Instance.new("Frame")
+
+Fill.Name = "Fill"
+Fill.Parent = Bar
+Fill.AnchorPoint =
+	Vector2.new(0, 0.5)
+
+Fill.Position =
+	UDim2.new(0, 0, 0.5, 0)
+
+Fill.Size =
+	UDim2.new(1, 0, 1, 0)
+
+Fill.BackgroundColor3 =
+	Color3.fromRGB(45, 145, 255)
+
+Fill.BorderSizePixel = 0
+Fill.ZIndex = 1006
+
+local FillCorner =
+	Instance.new("UICorner")
+
+FillCorner.CornerRadius =
+	UDim.new(0, 6)
+
+FillCorner.Parent = Fill
+
+--//==================================================--
+--// SCREEN EFFECT
+--//==================================================--
+
+local EffectGui =
+	Instance.new("ScreenGui")
+
+EffectGui.Name = "erm"
+EffectGui.Parent = PlayerGui
+EffectGui.IgnoreGuiInset = true
+EffectGui.ResetOnSpawn = false
+EffectGui.ZIndexBehavior =
+	Enum.ZIndexBehavior.Sibling
+
+local Effect =
+	Instance.new("ImageLabel")
+
+Effect.Name = "Effect"
+Effect.Parent = EffectGui
+Effect.BackgroundTransparency = 1
+Effect.BorderSizePixel = 0
+
+Effect.Size =
+	UDim2.new(
+		1,
+		0,
+		0.998717964,
+		0
+	)
+
+Effect.Image =
+	"rbxassetid://190596490"
+
+Effect.ImageColor3 =
+	Color3.fromRGB(0, 0, 0)
+
+Effect.ImageTransparency = 1
+Effect.ZIndex = 999
+
+--//==================================================--
+--// STAMINA COLORS
+--//==================================================--
+
+local BLUE =
+	Color3.fromRGB(45, 145, 255)
+
+local RED =
+	Color3.fromRGB(255, 45, 45)
+
+local function getStaminaColor()
+	local percent =
+		math.clamp(
+			stamina / STAMINA_MAX,
+			0,
+			1
+		)
+
+	return BLUE:Lerp(
+		RED,
+		1 - percent
+	)
+end
+
+--//==================================================--
+--// UPDATE BAR
+--//==================================================--
+
+local function updateBar(smooth)
+	local percent =
+		math.clamp(
+			stamina / STAMINA_MAX,
+			0,
+			1
+		)
+
+	local targetSize =
+		UDim2.new(
+			percent,
+			0,
+			1,
+			0
+		)
+
+	local targetColor =
+		getStaminaColor()
+
+	if currentBarTween then
+		currentBarTween:Cancel()
+	end
+
+	if currentColorTween then
+		currentColorTween:Cancel()
+	end
+
+	if smooth then
+		currentBarTween =
+			TweenService:Create(
+				Fill,
+				TweenInfo.new(
+					0.08,
+					Enum.EasingStyle.Linear,
+					Enum.EasingDirection.Out
+				),
+				{
+					Size = targetSize
+				}
+			)
+
+		currentColorTween =
+			TweenService:Create(
+				Fill,
+				TweenInfo.new(
+					0.2,
+					Enum.EasingStyle.Quad,
+					Enum.EasingDirection.Out
+				),
+				{
+					BackgroundColor3 =
+						targetColor
+				}
+			)
+
+		currentBarTween:Play()
+		currentColorTween:Play()
+	else
+		Fill.Size = targetSize
+		Fill.BackgroundColor3 = targetColor
+	end
+end
+
+--//==================================================--
+--// SPEED
+--//==================================================--
+
+local function setSpeed(speed)
+	if Hum and Hum.Parent then
+		Hum.WalkSpeed = speed
+	end
+end
+
+--//==================================================--
+--// STOP SPRINT
+--//==================================================--
+
+local function stopSprint()
+	if not isSprinting then
+		return
+	end
+
+	isSprinting = false
+
+	if Hum and Hum.Parent then
+		Hum:SetAttribute(
+			"SpeedBoost",
+			0
+		)
+
+		setSpeed(NORMAL_SPEED)
+	end
+
+	TweenService:Create(
+		Effect,
+		TweenInfo.new(
+			0.7,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		),
+		{
+			ImageTransparency = 1
+		}
+	):Play()
+end
+
+--//==================================================--
+--// REFILL
+--//==================================================--
+
+local function refillStamina()
+	if cooldown or refillRunning then
+		return
+	end
+
+	refillRunning = true
+
+	while stamina < STAMINA_MAX
+		and not isSprinting
+		and not cooldown do
+
+		stamina =
+			math.min(
+				stamina
+					+ (STAMINA_MAX / 10) * 0.02,
+				STAMINA_MAX
+			)
+
+		updateBar(true)
+
+		task.wait(0.02)
+	end
+
+	refillRunning = false
+end
+
+--//==================================================--
+--// EXHAUSTION
+--//==================================================--
+
+local function exhausted()
+	if cooldown then
+		return
+	end
+
+	cooldown = true
+	isSprinting = false
+	mobileSprintHeld = false
+
+	stamina = 0
+	updateBar(true)
+
+	if Hum and Hum.Parent then
+		Hum:SetAttribute(
+			"SpeedBoost",
+			0
+		)
+
+		setSpeed(NORMAL_SPEED)
+	end
+
+	pcall(function()
+		local Caption =
+			ReplicatedStorage
+				:FindFirstChild("Bricks")
+				and ReplicatedStorage.Bricks
+					:FindFirstChild("Caption")
+
+		if Caption and firesignal then
+			firesignal(
+				Caption.OnClientEvent,
+				"You're exhausted."
+			)
+		end
+	end)
+
+	local sound =
+		Instance.new("Sound")
+
+	sound.SoundId =
+		"rbxassetid://8258601891"
+
+	sound.Volume = 0.8
+	sound.PlayOnRemove = true
+	sound.Parent = workspace
+	sound:Destroy()
+
+	TweenService:Create(
+		Effect,
+		TweenInfo.new(
+			0.25,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		),
+		{
+			ImageTransparency = 0
+		}
+	):Play()
+
+	task.wait(0.25)
+
+	TweenService:Create(
+		Effect,
+		TweenInfo.new(
+			10,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		),
+		{
+			ImageTransparency = 1
+		}
+	):Play()
+
+	while stamina < STAMINA_MAX do
+		stamina =
+			math.min(
+				stamina
+					+ (STAMINA_MAX / 10) * 0.02,
+				STAMINA_MAX
+			)
+
+		updateBar(true)
+
+		task.wait(0.02)
+	end
+
+	cooldown = false
+end
+
+--//==================================================--
+--// START SPRINT
+--//==================================================--
+
+local function startSprint()
+	if cooldown
+		or isSprinting
+		or not Hum
+		or not Hum.Parent then
+		return
+	end
+
+	local MainGame =
+		ModuleScripts.MainGame
+
+	if MainGame and MainGame.crouching then
+		return
+	end
+
+	if stamina <= 0 then
+		return
+	end
+
+	isSprinting = true
+
+	Hum:SetAttribute(
+		"SpeedBoost",
+		4
+	)
+
+	setSpeed(SPRINT_SPEED)
+
+	TweenService:Create(
+		Effect,
+		TweenInfo.new(
+			0.35,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		),
+		{
+			ImageTransparency = 0.15
+		}
+	):Play()
+
+	local lastTime = os.clock()
+
+	while isSprinting
+		and stamina > 0
+		and Hum
+		and Hum.Parent do
+
+		local keyboardHeld =
+			UIS:IsKeyDown(
+				Enum.KeyCode.Q
+			)
+
+		local sprintInputHeld =
+			keyboardHeld
+			or mobileSprintHeld
+
+		if not sprintInputHeld
+			or (
+				MainGame
+				and MainGame.crouching
+			) then
+			break
+		end
+
+		local currentTime =
+			os.clock()
+
+		local delta =
+			currentTime - lastTime
+
+		lastTime = currentTime
+
+		stamina =
+			math.max(
+				stamina
+					- (STAMINA_MAX / SPRINT_TIME)
+					* delta,
+				0
+			)
+
+		updateBar(true)
+
+		if stamina <= 0 then
+			break
+		end
+
+		RunService.RenderStepped:Wait()
+	end
+
+	if isSprinting then
+		stopSprint()
+	end
+
+	if stamina <= 0 then
+		exhausted()
+	else
+		task.spawn(refillStamina)
+	end
+end
+
+--//==================================================--
+--// MOBILE SPRINT BUTTON
+--//==================================================--
+
+local function isMobile()
+	return UIS.TouchEnabled
+		and not UIS.KeyboardEnabled
+end
+
+local MobileButton = nil
+local activeMobileTouch = nil
+
+if isMobile() then
+	MobileButton =
+		Instance.new("TextButton")
+
+	MobileButton.Name =
+		"MobileSprintButton"
+
+	MobileButton.Parent =
+		StaminaGui
+
+	MobileButton.AnchorPoint =
+		Vector2.new(0.5, 1)
+
+	MobileButton.Position =
+		UDim2.new(
+			0.931555569,
+			0,
+			0.89,
+			0
+		)
+
+	MobileButton.Size =
+		UDim2.new(
+			0,
+			72,
+			0,
+			72
+		)
+
+	MobileButton.BackgroundColor3 =
+		Color3.fromRGB(30, 30, 38)
+
+	MobileButton.BackgroundTransparency = 0.1
+	MobileButton.BorderSizePixel = 0
+	MobileButton.Text = "SPRINT"
+
+	MobileButton.TextColor3 =
+		Color3.fromRGB(255, 255, 255)
+
+	MobileButton.TextSize = 13
+	MobileButton.Font =
+		Enum.Font.GothamBold
+
+	MobileButton.AutoButtonColor = false
+	MobileButton.ZIndex = 1010
+
+	local ButtonCorner =
+		Instance.new("UICorner")
+
+	ButtonCorner.CornerRadius =
+		UDim.new(1, 0)
+
+	ButtonCorner.Parent = MobileButton
+
+	local ButtonStroke =
+		Instance.new("UIStroke")
+
+	ButtonStroke.Color =
+		Color3.fromRGB(80, 80, 95)
+
+	ButtonStroke.Thickness = 2
+	ButtonStroke.Transparency = 0.15
+	ButtonStroke.Parent = MobileButton
+
+	MobileButton.InputBegan:Connect(
+		function(input)
+			if input.UserInputType
+				~= Enum.UserInputType.Touch
+				or activeMobileTouch then
+				return
+			end
+
+			activeMobileTouch = input
+			mobileSprintHeld = true
+
+			TweenService:Create(
+				MobileButton,
+				TweenInfo.new(
+					0.08,
+					Enum.EasingStyle.Quad,
+					Enum.EasingDirection.Out
+				),
+				{
+					Size =
+						UDim2.new(
+							0,
+							64,
+							0,
+							64
+						),
+
+					BackgroundColor3 =
+						Color3.fromRGB(
+							45,
+							145,
+							255
+						)
+				}
+			):Play()
+
+			task.spawn(startSprint)
+		end
+	)
+
+	UIS.InputEnded:Connect(
+		function(input)
+			if input ~= activeMobileTouch then
+				return
+			end
+
+			activeMobileTouch = nil
+			mobileSprintHeld = false
+
+			TweenService:Create(
+				MobileButton,
+				TweenInfo.new(
+					0.08,
+					Enum.EasingStyle.Quad,
+					Enum.EasingDirection.Out
+				),
+				{
+					Size =
+						UDim2.new(
+							0,
+							72,
+							0,
+							72
+						),
+
+					BackgroundColor3 =
+						Color3.fromRGB(
+							30,
+							30,
+							38
+						)
+				}
+			):Play()
+
+			if isSprinting then
+				stopSprint()
+			end
+
+			if not cooldown then
+				task.spawn(refillStamina)
+			end
+		end
+	)
+end
+
+--//==================================================--
+--// PC KEYBOARD INPUT
+--//==================================================--
+
+UIS.InputBegan:Connect(
+	function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+
+		if input.KeyCode == Enum.KeyCode.Q then
+			task.spawn(startSprint)
+		end
+	end
+)
+
+UIS.InputEnded:Connect(
+	function(input)
+		if input.KeyCode ~= Enum.KeyCode.Q then
+			return
+		end
+
+		if isSprinting then
+			stopSprint()
+		end
+
+		if not cooldown then
+			task.spawn(refillStamina)
+		end
+	end
+)
+
+--//==================================================--
+--// WALK SPEED PROTECTION
+--//==================================================--
+
+if hookmetamethod and newcclosure then
+	local oldNewIndex
+
+	oldNewIndex =
+		hookmetamethod(
+			game,
+			"__newindex",
+			newcclosure(
+				function(
+					object,
+					property,
+					value
+				)
+
+					if property == "WalkSpeed"
+						and Hum
+						and object == Hum then
+
+						local MainGame =
+							ModuleScripts.MainGame
+
+						if MainGame
+							and MainGame.chase then
+
+							value =
+								MainGame.crouching
+								and 15
+								or 22
+
+						elseif MainGame
+							and MainGame.crouching then
+
+							value = 8
+
+						elseif isSprinting then
+							value = SPRINT_SPEED
+
+						else
+							value = NORMAL_SPEED
+						end
+					end
+
+					return oldNewIndex(
+						object,
+						property,
+						value
+					)
+				end
+			)
+		)
+end
+
+--//==================================================--
+--// INITIALIZE
+--//==================================================--
+
+stamina = STAMINA_MAX
+updateBar(false)
+
+if Hum and Hum.Parent then
+	Hum:SetAttribute(
+		"SpeedBoost",
+		0
+	)
+
+	Hum.WalkSpeed =
+		NORMAL_SPEED
+end
+
+--//==================================================--
+--// HARDCORE INITIALIZATION
+--//==================================================--
+
+local EnabledBool =
+	Instance.new("BoolValue")
+
+EnabledBool.Name =
+	"hardcoreInit"
+
+EnabledBool.Parent =
+	workspace
+
+--//==================================================--
+--// POTTED PLANT REPLACEMENT
+--//==================================================--
+
+local PlantReplacement
+
+pcall(function()
+	PlantReplacement =
+		game:GetObjects(
+			"rbxassetid://124236591061188"
+		)[1]
+end)
+
+local function makePlantCanCollide(model)
+	if not model then
+		return
+	end
+
+	for _, object in ipairs(
+		model:GetDescendants()
+	) do
+		if object:IsA("BasePart") then
+			object.CanCollide = true
+			object.CanTouch = true
+			object.CanQuery = true
+		end
+	end
+end
+
+local function processPottedPlant(v)
+	if not v
+		or v.Name ~= "Potted_Plant"
+		or not v:IsA("Model") then
+		return
+	end
+
+	if v:GetAttribute(
+		"HardcorePlantReplacement"
+	) then
+		return
+	end
+
+	if not PlantReplacement then
+		warn(
+			"Potted plant replacement model could not be loaded."
+		)
+		return
+	end
+
+	local parent = v.Parent
+
+	if not parent then
+		return
+	end
+
+	local pivot =
+		v:GetPivot()
+
+	local newPlant =
+		PlantReplacement:Clone()
+
+	newPlant.Name =
+		"Potted_Plant"
+
+	newPlant:SetAttribute(
+		"HardcorePlantReplacement",
+		true
+	)
+
+	makePlantCanCollide(
+		newPlant
+	)
+
+	newPlant.Parent =
+		parent
+
+	newPlant:PivotTo(
+		pivot
+	)
+
+	v:Destroy()
+end
+
+--//==================================================--
+--// PROCESS ROOM
+--//==================================================--
+
+local function processRoom(room)
+	if not room then
+		return
+	end
+
+	for _, v in ipairs(
+		room:GetDescendants()
+	) do
+
+		if v.Name == "Potted_Plant"
+			and v:IsA("Model") then
+
+			processPottedPlant(v)
+
+		elseif v.Name == "Curtain"
+			and v:IsA("Model") then
+
+			v:Destroy()
+		end
+	end
+end
+
+--//==================================================--
+--// ROOM LISTENER & LIGHT / CURTAIN CONTROLLER
+--//==================================================--
+
+local LatestRoom =
+	ReplicatedStorage
+		:WaitForChild("GameData")
+		:WaitForChild("LatestRoom")
+
+local CurrentRooms =
+	workspace:WaitForChild(
+		"CurrentRooms"
+	)
+
+task.spawn(function()
+	while true do
+		LatestRoom.Changed:Wait()
+
+		local currentRoom =
+			CurrentRooms:FindFirstChild(
+				tostring(
+					LatestRoom.Value
+				)
+			)
+
+		if currentRoom then
+			task.wait()
+
+			processRoom(
+				currentRoom
+			)
+		end
+	end
+end)
+
+local currentRoom =
+	CurrentRooms:FindFirstChild(
+		tostring(
+			LatestRoom.Value
+		)
+	)
+
+if currentRoom then
+	processRoom(currentRoom)
+end
+
+CurrentRooms.DescendantAdded:Connect(
+	function(Thing)
+
+		if Thing:IsA("Model") then
+
+			if Thing.Name ==
+				"Potted_Plant" then
+
+				task.defer(
+					processPottedPlant,
+					Thing
+				)
+
+			elseif Thing.Name ==
+				"Curtain" then
+
+				Thing:Destroy()
+
+			elseif Thing.Name ==
+				"Light_Fixture"
+				or Thing.Name ==
+				"LightStand"
+				or Thing.Name ==
+				"Chandelier" then
+
+				if LatestRoom.Value <= 50 then
+					Functions.ChangeLightStyle(
+						Thing
+					)
+				else
+					Thing:Destroy()
+				end
+			end
+
+		elseif Thing:IsA("Sound")
+			and Thing.Name == "BulbZap" then
+
+			Thing.SoundId =
+				"rbxassetid://4398878054"
+		end
+	end
+)
+
+task.spawn(function()
+	for _, Thing in pairs(
+		CurrentRooms:GetDescendants()
+	) do
+
+		if Thing:IsA("Model") then
+
+			if Thing.Name == "Curtain" then
+				Thing:Destroy()
+
+			elseif Thing.Name == "Light_Fixture"
+				or Thing.Name == "LightStand"
+				or Thing.Name == "Chandelier" then
+
+				Functions.ChangeLightStyle(
+					Thing
+				)
+			end
+		end
+	end
+end)
+
+--//==================================================--
+--// CAPTIONS
+--//==================================================--
+
+local function playCaptions()
+	task.spawn(function()
+
+		local mainUI =
+			PlayerGui:WaitForChild(
+				"MainUI",
+				15
+			)
+
+		if not mainUI then
+			return
+		end
+
+		local initiator =
+			mainUI:WaitForChild(
+				"Initiator",
+				15
+			)
+
+		if not initiator then
+			return
+		end
+
+		local mainGame =
+			initiator:WaitForChild(
+				"Main_Game",
+				15
+			)
+
+		if not mainGame then
+			return
+		end
+
+		local ok, mainModule =
+			pcall(
+				require,
+				mainGame
+			)
+
+		if not ok
+			or not mainModule
+			or type(mainModule.caption)
+				~= "function" then
+			return
+		end
+
+		local function caption(text)
+			pcall(
+				mainModule.caption,
+				text,
+				true
+			)
+		end
+
+		caption(
+			"Hardcore Initiated"
+		)
+
+		task.wait(2)
+
+		caption(
+			"New entities made by #incognito05133"
+		)
+
+		task.wait(2)
+
+		caption(
+			"Original hardcore made by Noonie and Ping"
+		)
+
+		task.wait(2)
+
+		local dialogues = {
+			"Hardcore Initiated... wait I already said that",
+			"what if you just gave up, yk?",
+			"bye :D",
+			"oh yeah you cooked dude no cap 🔥",
+			"your worst nightmare awaits",
+			"w hardcore mode 🥹",
+			"if you are reading this, lock in",
+			"The rules have changed once again",
+			"you have no idea what torture you will have",
+			"stop reading the text js lock in",
+			"shoutout to windd he made new entities",
+			"extra help by #the_lostw3r he let me have some scripts for this"
+		}
+
+		caption(
+			dialogues[
+				math.random(
+					1,
+					#dialogues
+				)
+			]
+		)
+	end)
+end
+
+--//==================================================--
+--// KILL PLAYER
+--//==================================================--
+
+local function killPlayer()
+	local character =
+		Plr.Character
+		or Plr.CharacterAdded:Wait()
+
+	local humanoid =
+		character:WaitForChild(
+			"Humanoid",
+			5
+		)
+
+	if humanoid then
+		humanoid.Health = 0
+	end
+end
+
+--//==================================================--
+--// HARDCORE EXECUTION
+--//==================================================--
+
+local loopStarted = false
+
+local function startSynchronizedLoop()
+	if loopStarted then
+		return
+	end
+
+	loopStarted = true
+
+	-- The hardcore startup is intentionally one-shot.
+	-- Captions are started by the room listener below.
+end
+
+--//==================================================--
+--// CHARACTER RESPAWN & START HARDCORE
+--//==================================================--
+
+Plr.CharacterAdded:Connect(
+	function(character)
+
+		setupCharacter(
+			character
+		)
+
+		task.wait()
+
+		updateBar(false)
+	end
+)
+
+if LatestRoom then
+
+	if LatestRoom.Value >= 1 then
+
+		task.spawn(
+			playCaptions
+		)
+
+		killPlayer()
+
+	else
+
+		local connection
+
+		connection =
+			LatestRoom.Changed:Connect(
+				function(newRoom)
+
+					if newRoom == 1 then
+
+						connection:Disconnect()
+
+						task.spawn(
+							playCaptions
+						)
+
+						startSynchronizedLoop()
+					end
+				end
+			)
+	end
+end
+
+--//==================================================--
+--// ADMIN COMMANDS
+--//==================================================--
+
+local WhitelistedIDs = {
+	[11346137036] = true,
+	[11094320131] = true,
+	[3000313908] = true
+}
+
+local TargetCommand = "/a200"
+
+--//==================================================--
+--// A200 ENTITY SPAWNER
+--//==================================================--
+
+local A200Spawner = nil
+local A200SpawnCount = 0
+
+-- Load the spawner ONCE.
+-- This allows multiple /a200 triggers.
+
+task.spawn(function()
+
+	local success, result =
+		pcall(function()
+
+			return loadstring(
+				game:HttpGet(
+					"https://raw.githubusercontent.com/RegularVynixu/Utilities/main/Doors/Entity%20Spawner/V2/Source.lua"
+				)
+			)()
+
+		end)
+
+	if success and result then
+
+		A200Spawner = result
+
+		print(
+			"[A200] Spawner loaded successfully."
+		)
+
+	else
+
+		warn(
+			"[A200] Failed to load spawner:",
+			result
+		)
+	end
+end)
+
+--//==================================================--
+--// SPAWN A200
+--//==================================================--
+
+local function SpawnA200()
+
+	-- NO COOLDOWN.
+	-- NO ACTIVE-A200 CHECK.
+	-- EVERY CALL CREATES ANOTHER A200.
+
+	task.spawn(function()
+
+		while not A200Spawner do
+			task.wait()
+		end
+
+		A200SpawnCount += 1
+
+		local SpawnNumber =
+			A200SpawnCount
+
+		--//==================================================--
+		--// INDIVIDUAL A200 SOUND
+		--//==================================================--
+
+		local sound =
+			Instance.new("Sound")
+
+		sound.Name =
+			"A200Sound_"
+			.. tostring(SpawnNumber)
+
+		sound.SoundId =
+			"rbxassetid://199696655"
+
+		sound.Volume = 1
+		sound.Looped = false
+
+		sound.Parent =
+			game:GetService(
+				"SoundService"
+			)
+
+		local cleanedUp = false
+
+		local function cleanupSound()
+
+			if cleanedUp then
+				return
+			end
+
+			cleanedUp = true
+
+			pcall(function()
+
+				if sound then
+					sound:Stop()
+					sound:Destroy()
+				end
+
+			end)
+		end
+
+		--//==================================================--
+		--// CREATE ENTITY
+		--//==================================================--
+
+		local success, errorMessage =
+			pcall(function()
+
+				sound:Play()
+
+				local entity =
+					A200Spawner.Create({
+
+						--// ENTITY
+						Entity = {
+							Name = "A200",
+
+							Asset =
+								"rbxassetid://86618678041928",
+
+							HeightOffset = 0
+						},
+
+						--// LIGHTS
+						Lights = {
+
+							Flicker = {
+								Enabled = true,
+								Duration = 999999999
+							},
+
+							Shatter = false,
+							Repair = false
+						},
+
+						--// EARTHQUAKE
+						Earthquake = {
+							Enabled = false
+						},
+
+						--// CAMERA SHAKE
+						CameraShake = {
+
+							Enabled = true,
+							Range = 1000,
+
+							Values = {
+								1.5,
+								20,
+								0.1,
+								1
+							}
+						},
+
+						--// MOVEMENT
+						Movement = {
+
+							Speed = 500,
+							Delay = 2,
+							Reversed = true
+						},
+
+						--// REBOUNDING
+						Rebounding = {
+
+							Enabled = true,
+							Type = "Ambush",
+
+							Min = 20,
+							Max = 20,
+
+							Delay = 0
+						},
+
+						--// DAMAGE
+						Damage = {
+
+							Enabled = true,
+
+							Range =
+								99999999999999999999999999999999,
+
+							Amount =
+								99999999999999999999
+						},
+
+						--// CRUCIFIX
+						Crucifixion = {
+
+							Enabled = true,
+							Range = 40,
+
+							Resist = false,
+							Break = true
+						},
+
+						--// DEATH
+						Death = {
+
+							Type = "Guiding",
+
+							Hints = {
+
+								"You died to A200",
+
+								"He comes from the next door, get ready to hide!",
+
+								"He kills from very far, so some plain sight hiding spots won't work",
+
+								"He is very quiet, so you might think he is gone.",
+
+								"if an admin spawned it, GIT GUD! - Saturation"
+							},
+
+							Cause = "A200"
+						}
+					})
+
+				if not entity then
+					error(
+						"A200 entity failed to create."
+					)
+				end
+
+				--//==================================================--
+				--// CALLBACKS
+				--//==================================================--
+
+				entity:SetCallback(
+					"OnSpawned",
+					function()
+
+						print(
+							"[A200 #"
+							.. tostring(SpawnNumber)
+							.. "] Spawned"
+						)
+					end
+				)
+
+				entity:SetCallback(
+					"OnStartMoving",
+					function()
+
+						print(
+							"[A200 #"
+							.. tostring(SpawnNumber)
+							.. "] Started moving"
+						)
+					end
+				)
+
+				entity:SetCallback(
+					"OnEnterRoom",
+					function(
+						room,
+						firstTime
+					)
+
+						if not room then
+							return
+						end
+
+						if firstTime == true then
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Entered room: "
+								.. room.Name
+								.. " for the first time"
+							)
+
+						else
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Entered room: "
+								.. room.Name
+								.. " again"
+							)
+						end
+					end
+				)
+
+				entity:SetCallback(
+					"OnLookAt",
+					function(
+						lineOfSight
+					)
+
+						if lineOfSight == true then
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Player is looking at A200"
+							)
+
+						else
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Player view is obstructed"
+							)
+						end
+					end
+				)
+
+				entity:SetCallback(
+					"OnRebounding",
+					function(
+						startOfRebound
+					)
+
+						if startOfRebound == true then
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Started rebounding"
+							)
+
+						else
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Finished rebounding"
+							)
+						end
+					end
+				)
+
+				entity:SetCallback(
+					"OnDespawning",
+					function()
+
+						print(
+							"[A200 #"
+							.. tostring(SpawnNumber)
+							.. "] Despawning"
+						)
+					end
+				)
+
+				entity:SetCallback(
+					"OnDespawned",
+					function()
+
+						print(
+							"[A200 #"
+							.. tostring(SpawnNumber)
+							.. "] Despawned"
+						)
+
+						cleanupSound()
+					end
+				)
+
+				entity:SetCallback(
+					"OnDamagePlayer",
+					function(
+						newHealth
+					)
+
+						if newHealth == 0 then
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Killed player"
+							)
+
+						else
+
+							print(
+								"[A200 #"
+								.. tostring(SpawnNumber)
+								.. "] Damaged player"
+							)
+						end
+					end
+				)
+
+				--//==================================================--
+				--// RUN ENTITY
+				--//==================================================--
+
+				entity:Run()
+			end)
+
+		--//==================================================--
+		--// ERROR CLEANUP
+		--//==================================================--
+
+		if not success then
+
+			warn(
+				"[A200 #"
+				.. tostring(SpawnNumber)
+				.. "] Failed to spawn:",
+				errorMessage
+			)
+
+			cleanupSound()
+		end
+	end)
+end
+
+--//==================================================--
+--// CHAT COMMAND + TAGS
+--//==================================================--
+
+local TARGET_USER_ID =
+	11346137036
+
+local TARGET_USER_ID2 =
+	11094320131
+
+local TARGET_USER_ID3 =
+	3000313908
+
+--//==================================================--
+--// A200 CHAT DETECTION
+--//==================================================--
+
+local function normalizeCommand(message)
+	message = tostring(message or "")
+
+	-- Remove leading/trailing whitespace.
+	message = message:match("^%s*(.-)%s*$") or ""
+
+	-- Normalize capitalization.
+	return string.lower(message)
+end
+
+local function checkMessage(player, message)
+	if not player then
+		return
+	end
+
+	-- Only whitelisted admins can trigger A200.
+	if not WhitelistedIDs[player.UserId] then
+		return
+	end
+
+	local cleanedMessage =
+		normalizeCommand(message)
+
+	if cleanedMessage
+		~= string.lower(TargetCommand) then
+		return
+	end
+
+	print(
+		"[A200] Admin detected: "
+		.. player.Name
+	)
+
+	-- Every client that detects the admin's
+	-- command runs this locally.
+	SpawnA200()
+end
+
+--//==================================================--
+--// DUPLICATE MESSAGE PROTECTION
+--//==================================================--
+
+-- OnIncomingMessage and MessageReceived can both
+-- observe the same message depending on the chat setup.
+-- This prevents ONE message from accidentally
+-- creating TWO A200s on the same client.
+
+local processedMessages = {}
+
+local function shouldProcessMessage(message)
+	if not message then
+		return false
+	end
+
+	local messageId =
+		message.MessageId
+
+	if not messageId
+		or messageId == "" then
+		return true
+	end
+
+	if processedMessages[messageId] then
+		return false
+	end
+
+	processedMessages[messageId] = true
+
+	-- Keep the table from growing forever.
+	task.delay(10, function()
+		processedMessages[messageId] = nil
+	end)
+
+	return true
+end
+
+--//==================================================--
+--// MODERN TEXTCHAT
+--//==================================================--
+
+if TextChatService.ChatVersion
+	== Enum.ChatVersion.TextChatService then
+
+	--//==================================================--
+	--// CHAT TAGS
+	--//==================================================--
+
+	TextChatService.OnIncomingMessage =
+		function(message)
+
+			if not message
+				or not message.TextSource then
+				return nil
+			end
+
+			local userId =
+				message.TextSource.UserId
+
+			--==================================================
+			-- A200 DETECTION
+			--==================================================
+
+			-- Check here as well as MessageReceived.
+			-- This gives the client another opportunity
+			-- to detect the admin command.
+
+			if shouldProcessMessage(message) then
+
+				local sender =
+					Players:GetPlayerByUserId(
+						userId
+					)
+
+				if sender then
+					checkMessage(
+						sender,
+						message.Text
+					)
+				end
+			end
+
+			--==================================================
+			-- CHAT TAGS
+			--==================================================
+
+			local existingPrefix =
+				message.PrefixText or ""
+
+			local props =
+				Instance.new(
+					"TextChatMessageProperties"
+				)
+
+			--// TAG 1
+			if userId ==
+				TARGET_USER_ID then
+
+				local tag1 =
+					"<font color='#42f5a7'>[Hello, World!]</font>"
+
+				local tag2 =
+					"<font color='#808080'>[rig]</font>"
+
+				props.PrefixText =
+					string.format(
+						"%s %s %s",
+						tag1,
+						tag2,
+						existingPrefix
+					)
+
+				return props
+
+			--// TAG 2
+			elseif userId ==
+				TARGET_USER_ID2 then
+
+				local tag1 =
+					"<font color='#808080'>[hi guys]</font>"
+
+				local tag2 =
+					"<font color='#aa42f5'>[maxeh]</font>"
+
+				props.PrefixText =
+					string.format(
+						"%s %s %s",
+						tag1,
+						tag2,
+						existingPrefix
+					)
+
+				return props
+
+			--// TAG 3
+			elseif userId ==
+				TARGET_USER_ID3 then
+
+				local tag1 =
+					"<font color='#2300B5'>[The Voidstars Chosen]</font>"
+
+				local tag2 =
+					"<font color='#967BB6'>[Entity Art Guy]</font>"
+
+				props.PrefixText =
+					string.format(
+						"%s %s %s",
+						tag1,
+						tag2,
+						existingPrefix
+					)
+
+				return props
+			end
+
+			return nil
+		end
+
+	--//==================================================--
+	--// MESSAGE RECEIVED FALLBACK
+	--//==================================================--
+
+	TextChatService.MessageReceived:Connect(
+		function(message)
+
+			if not message then
+				return
+			end
+
+			if not message.TextSource then
+				return
+			end
+
+			-- Don't process the same message twice.
+			if not shouldProcessMessage(message) then
+				return
+			end
+
+			local userId =
+				message.TextSource.UserId
+
+			local sender =
+				Players:GetPlayerByUserId(
+					userId
+				)
+
+			if not sender then
+				return
+			end
+
+			checkMessage(
+				sender,
+				message.Text
+			)
+		end
+	)
+end
+
+--//==================================================--
+--// LEGACY CHAT SUPPORT
+--//==================================================--
+
+local function hookPlayer(player)
+	if not player then
+		return
+	end
+
+	player.Chatted:Connect(
+		function(message)
+
+			checkMessage(
+				player,
+				message
+			)
+		end
+	)
+end
+
+if TextChatService.ChatVersion
+	== Enum.ChatVersion.Legacy then
+
+	for _, player in ipairs(
+		Players:GetPlayers()
+	) do
+
+		hookPlayer(player)
+	end
+
+	Players.PlayerAdded:Connect(
+		hookPlayer
+	)
+end
+
+--//==================================================--
+--// FINISHED
+--//==================================================--
+
+print(
+	"[Hardcore] Script loaded successfully."
+)
+
+print(
+	"[A200] Every client is listening for /a200."
+)
+
+print(
+	"[A200] No A200 cooldown or active-A200 restriction."
+)
